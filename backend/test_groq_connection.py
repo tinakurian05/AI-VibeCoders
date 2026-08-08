@@ -2,6 +2,7 @@ import os
 import sys
 from unittest.mock import patch
 import httpx
+from typing import Any, Dict
 
 # Ensure backend directory is in python path
 sys.path.insert(0, os.path.dirname(__file__))
