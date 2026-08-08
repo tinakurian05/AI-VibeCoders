@@ -231,8 +231,21 @@ class EvidenceLedger(BaseModel):
 
 
 # =====================================================================
-# PART 7: LLM Boundary (Structured Analysis Return Schema)
+# PART 7: LLM Boundary & Response Schemas
 # =====================================================================
+
+class LLMResponse(BaseModel):
+    """
+    Normalized internal representation of an LLM generation response.
+    Provider-agnostic structure returned by LLMGateway.
+    """
+    content: str
+    model_used: str
+    provider: str = "groq"
+    latency_ms: float = 0.0
+    success: bool = True
+    error_category: Optional[str] = None
+
 
 class CandidateEvidenceAnalysis(BaseModel):
     """
