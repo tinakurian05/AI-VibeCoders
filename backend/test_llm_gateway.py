@@ -1,6 +1,6 @@
 import os
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 # Ensure backend directory is in python path
@@ -126,7 +126,7 @@ def test_7_api_key_never_appears_in_output():
 
 
 def test_8_all_previous_test_suites_pass():
-    """8. All previous test suites (Step 1 through 3A + Architecture + Groq) pass."""
+    """8. All previous test suites pass."""
     from test_api import test_health_check, test_create_session
     from test_candidate_profile_service import test_1_cand001_loads_successfully
     from test_curriculum_service import test_1_curriculum_loads_successfully
@@ -147,7 +147,6 @@ def test_8_all_previous_test_suites_pass():
 
 
 if __name__ == "__main__":
-    from unittest.mock import patch
     print("Running LLMGateway Unit Test Suite...")
     test_1_and_2_gateway_initialization_and_primary_model()
     test_3_and_4_gateway_delegates_to_groq_client_and_normalizes_response()
