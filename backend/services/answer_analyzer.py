@@ -1,8 +1,9 @@
 import json
 import re
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import ValidationError
 from services.llm_gateway import llm_gateway, LLMGateway
+from services.interview_memory import interview_memory_service, InterviewMemoryService
 from models.interview import CandidateEvidenceAnalysis
 from models.analyzer import AnswerAnalyzerInput, AnalyzerError
 
@@ -43,8 +44,13 @@ JSON SCHEMA:
 """
 
 class AnswerAnalyzer:
-    def __init__(self, gateway: Optional[LLMGateway] = None):
+    def __init__(
+        self,
+        gateway: Optional[LLMGateway] = None,
+        memory_service: Optional[InterviewMemoryService] = None
+    ):
         self.gateway = gateway or llm_gateway
+        self.memory_service = memory_service or interview_memory_service
 
     def _build_user_prompt(self, input_data: AnswerAnalyzerInput) -> str:
         prompt = f"Candidate ID: {input_data.candidate_id}\n"
@@ -54,6 +60,12 @@ class AnswerAnalyzer:
         prompt += "Relevant Objectives:\n"
         for obj in input_data.relevant_objectives:
             prompt += f"- {obj}\n"
+
+        if input_data.relevant_memories:
+            prompt += "\nRelevant Memories from Previous Turns:\n"
+            for mem in input_data.relevant_memories:
+                content = mem.get("content") or mem.get("summary") or mem.get("text") or str(mem)
+                prompt += f"- {content}\n"
             
         prompt += f"\nCurrent Question: {input_data.current_question}\n"
         prompt += f"Candidate Answer: {input_data.candidate_answer}\n"
@@ -69,6 +81,9 @@ class AnswerAnalyzer:
         return content
 
     def analyze(self, input_data: AnswerAnalyzerInput) -> CandidateEvidenceAnalysis:
+        """
+        Analyze a candidate answer using LLMGateway and return structured CandidateEvidenceAnalysis.
+        """
         user_prompt = self._build_user_prompt(input_data)
         
         response = self.gateway.generate(
@@ -90,3 +105,57 @@ class AnswerAnalyzer:
             raise AnalyzerError(f"LLM output failed schema validation: {e}")
         except Exception as e:
             raise AnalyzerError(f"Unexpected error during analysis: {e}")
+
+    def analyze_with_memory(
+        self,
+        session_id: str,
+        input_data: AnswerAnalyzerInput,
+        turn_number: int = 1,
+        store_turn: bool = True
+    ) -> CandidateEvidenceAnalysis:
+        """
+        Retrieve relevant memories from Breeth via InterviewMemoryService, analyze candidate answer,
+        and store the completed turn episode in Breeth.
+        
+        Order of execution:
+        1. Retrieve relevant memories via InterviewMemoryService.get_relevant_memories().
+        2. Execute LLM answer analysis via self.analyze().
+        3. Obtain valid CandidateEvidenceAnalysis.
+        4. Store completed turn episode in Breeth via InterviewMemoryService.store_turn().
+        
+        If Breeth retrieval or storage fails, the exception is caught safely and CandidateEvidenceAnalysis
+        is returned without breaking the interview flow.
+        """
+        # 1. Retrieve relevant memories
+        search_query = f"{input_data.topic} {input_data.current_question}"
+
+        try:
+            memories = self.memory_service.get_relevant_memories(
+                session_id=session_id,
+                query=search_query,
+                limit=5
+            )
+            input_data.relevant_memories = memories or []
+        except Exception:
+            input_data.relevant_memories = []
+
+        # 2 & 3. Analyze candidate answer and obtain CandidateEvidenceAnalysis
+        analysis = self.analyze(input_data)
+
+        # 4. Store completed turn episode in Breeth after successful analysis
+        if store_turn:
+            try:
+                self.memory_service.store_turn(
+                    session_id=session_id,
+                    turn_number=turn_number,
+                    question=input_data.current_question,
+                    candidate_answer=input_data.candidate_answer,
+                    curriculum_day=input_data.curriculum_day,
+                    topic=input_data.topic,
+                    analysis=analysis
+                )
+            except Exception:
+                # Breeth storage failure must never fail the interview or raise exception to caller
+                pass
+
+        return analysis
