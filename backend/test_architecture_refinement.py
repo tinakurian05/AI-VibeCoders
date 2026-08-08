@@ -11,7 +11,9 @@ from services.interview_planner import interview_planner
 from services.session_manager import session_manager
 from models.interview import (
     CandidateState,
+    CurriculumState,
     CurriculumContext,
+    InterviewPlan,
     InterviewState,
     CandidateKnowledgeModel,
     CandidateTopicKnowledge,
@@ -110,7 +112,9 @@ def test_8_and_9_llm_analysis_model_and_session_manager_integration():
     assert session["interview_state"] is not None
     assert session["knowledge_model"] is not None
     assert session["evidence_ledger"] is not None
-    assert len(session["knowledge_model"].topics) == 0
+    assert len(session["knowledge_model"].topics) > 0
+    assert all(t.understanding_level == "UNKNOWN" for t in session["knowledge_model"].topics.values())
+    assert all(t.confidence is None for t in session["knowledge_model"].topics.values())
 
     # Test 8: LLM returns CandidateEvidenceAnalysis structure -> backend validates and applies
     analysis = CandidateEvidenceAnalysis(
@@ -169,6 +173,83 @@ def test_15_to_17_canonical_data_file_checks():
     print("[PASS] 15-17. Canonical data file checks pass and root duplicates removed.")
 
 
+def test_18_engine_foundation_requirements():
+    """Verify all 14 engine foundation validation requirements explicitly."""
+    # 1. CandidateState creation still works
+    c_state = candidate_profile_service.build_candidate_state("CAND-003")
+    assert isinstance(c_state, CandidateState)
+    assert c_state.candidate_id == "CAND-003"
+
+    # 2. CurriculumState creation works
+    curr_state = curriculum_service.get_state()
+    assert isinstance(curr_state, CurriculumState)
+
+    # 3. InterviewPlanner creates a valid plan
+    plan = interview_planner.plan_interview(c_state, curr_state)
+    assert isinstance(plan, InterviewPlan)
+
+    # 4. Session creation automatically creates InterviewPlan
+    session_manager.clear_all()
+    candidate_profile = candidate_profile_service.get_candidate("CAND-003")
+    session = session_manager.create_session("sess-test-fnd", candidate_profile)
+    assert session["interview_state"].interview_plan is not None
+
+    # 5. InterviewState contains the plan
+    assert isinstance(session["interview_state"].interview_plan, InterviewPlan)
+
+    # 6. Minimum 8 question budget is enforced when possible
+    assert session["interview_state"].interview_plan.total_question_budget >= 8
+
+    # 7. At least 4 curriculum days are selected when candidate has enough eligible completed days
+    # CAND-003 has 10 completed days, so budget must have >= 4 days
+    assert len(session["interview_state"].interview_plan.selected_days) >= 4
+
+    # 8. CandidateKnowledgeModel starts unknown
+    topics = session["knowledge_model"].topics
+    assert len(topics) > 0
+    for day_num, tk in topics.items():
+        assert tk.understanding_level == "UNKNOWN"
+        assert tk.confidence is None
+        assert tk.depth_confidence is None
+        assert tk.reasoning_confidence is None
+        assert tk.communication_confidence is None
+
+    # 9. Objective-level knowledge can be represented
+    day_7_objs = topics[7].objectives
+    assert len(day_7_objs) > 0
+    assert "day-7-obj-0" in day_7_objs
+    assert day_7_objs["day-7-obj-0"].understanding_level == "UNKNOWN"
+    assert day_7_objs["day-7-obj-0"].confidence is None
+
+    # 10. EvidenceLedger remains traceable
+    ledger = session["evidence_ledger"]
+    assert isinstance(ledger, EvidenceLedger)
+    assert len(ledger.items) == 0  # starts empty
+
+    # 11. Existing API tests pass
+    from test_api import test_health_check, test_create_session, test_subsequent_message
+    test_health_check()
+    test_create_session()
+    test_subsequent_message()
+
+    # 12. Existing Candidate Profile tests pass
+    from test_candidate_profile_service import test_1_cand001_loads_successfully, test_2_cand001_correct_id_and_name
+    test_1_cand001_loads_successfully()
+    test_2_cand001_correct_id_and_name()
+
+    # 13. Existing Curriculum tests pass
+    from test_curriculum_service import test_1_curriculum_loads_successfully, test_2_thirty_one_days_parsed
+    test_1_curriculum_loads_successfully()
+    test_2_thirty_one_days_parsed()
+
+    # 14. Breeth configuration remains unaffected
+    from services.memory_service import MemoryService
+    service = MemoryService(api_key="test-api-key")
+    assert service.api_key == "test-api-key"
+    assert service.is_configured() is True
+    print("[PASS] 18. Explicit validation requirements verified.")
+
+
 if __name__ == "__main__":
     print("Running Architectural Refinement Test Suite...")
     test_1_and_2_candidate_state_is_pre_interview_facts_only()
@@ -178,4 +259,5 @@ if __name__ == "__main__":
     test_8_and_9_llm_analysis_model_and_session_manager_integration()
     test_10_to_14_existing_test_suites_pass()
     test_15_to_17_canonical_data_file_checks()
+    test_18_engine_foundation_requirements()
     print("\nALL ARCHITECTURAL REFINEMENT TESTS PASSED SUCCESSFULLY!")

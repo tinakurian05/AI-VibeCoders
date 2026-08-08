@@ -157,15 +157,28 @@ class InterviewState(BaseModel):
 # PART 5: CandidateKnowledgeModel (DERIVED TECHNICAL UNDERSTANDING)
 # =====================================================================
 
+class ObjectiveKnowledge(BaseModel):
+    """Technical understanding belief state for a specific learning objective."""
+    objective_id: str
+    text: str
+    understanding_level: str = "UNKNOWN"  # e.g., "UNKNOWN", "HIGH", "MEDIUM", "LOW"
+    confidence: Optional[float] = None
+    evidence_ids: List[str] = []
+
+
 class CandidateTopicKnowledge(BaseModel):
-    """Technical understanding belief state for a specific topic."""
+    """Technical understanding belief state for a specific topic (curriculum day)."""
     curriculum_day: int
     topic: str
     understanding_level: str = "UNKNOWN"  # e.g., "UNKNOWN", "HIGH", "MEDIUM", "LOW"
-    confidence: float = 0.0               # 0.0 to 1.0
+    confidence: Optional[float] = None     # null / None at init
+    depth_confidence: Optional[float] = None
+    reasoning_confidence: Optional[float] = None
+    communication_confidence: Optional[float] = None
     strengths: List[str] = []
     gaps: List[str] = []
     evidence_ids: List[str] = []
+    objectives: Dict[str, ObjectiveKnowledge] = {}
 
 
 class CandidateKnowledgeModel(BaseModel):
@@ -177,6 +190,12 @@ class CandidateKnowledgeModel(BaseModel):
     """
     candidate_id: str
     topics: Dict[int, CandidateTopicKnowledge] = {}
+    misconceptions: List[str] = []
+    global_signals: Dict[str, Optional[float]] = {
+        "communication": None,
+        "reasoning": None,
+        "confidence": None,
+    }
 
 
 # =====================================================================
@@ -191,10 +210,11 @@ class EvidenceItem(BaseModel):
     candidate_id: str
     curriculum_day: int
     topic: str
+    objective_id: Optional[str] = None
     candidate_claim: str
     evidence_text: str
     assessment: str  # e.g. "supports_understanding", "indicates_gap", "ambiguous", "needs_follow_up"
-    confidence: float = 1.0
+    confidence: Optional[float] = None
     turn: int = 0
 
 

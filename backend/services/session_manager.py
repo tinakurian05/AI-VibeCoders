@@ -29,13 +29,22 @@ class SessionManager:
         """
         Initialize and store a new session managing all 4 architectural state layers.
         """
+        # Load CurriculumState
+        from services.curriculum_service import curriculum_service
+        from services.interview_planner import interview_planner
+        
+        curriculum_state = curriculum_service.get_state()
+
         # Layer 1: CandidateState (pre-interview facts)
         candidate_state: Optional[CandidateState] = None
         candidate_id = "UNKNOWN"
+        interview_plan: Optional[InterviewPlan] = None
         if candidate is not None:
             try:
                 candidate_state = candidate_profile_service.build_candidate_state(candidate)
                 candidate_id = candidate_state.candidate_id
+                # Generate InterviewPlan if candidate state is successfully built
+                interview_plan = interview_planner.plan_interview(candidate_state, curriculum_state)
             except Exception:
                 candidate_state = None
 
@@ -45,6 +54,7 @@ class SessionManager:
             candidate_id=candidate_id,
             current_turn=0,
             question_count=0,
+            interview_plan=interview_plan,
             conversation=[],
             covered_days=[],
             done=False,
@@ -52,10 +62,44 @@ class SessionManager:
             interview_completed=False,
         )
 
-        # Layer 3: CandidateKnowledgeModel (initialized empty / UNKNOWN)
+        # Layer 3: CandidateKnowledgeModel (initialized empty / UNKNOWN / None for confidence)
+        from models.interview import ObjectiveKnowledge
+        topics = {}
+        for day_num, day_obj in curriculum_state.days.items():
+            objectives_map = {}
+            for idx, obj_text in enumerate(day_obj.objectives):
+                obj_id = f"day-{day_num}-obj-{idx}"
+                objectives_map[obj_id] = ObjectiveKnowledge(
+                    objective_id=obj_id,
+                    text=obj_text,
+                    understanding_level="UNKNOWN",
+                    confidence=None,
+                    evidence_ids=[]
+                )
+            
+            topics[day_num] = CandidateTopicKnowledge(
+                curriculum_day=day_num,
+                topic=day_obj.title,
+                understanding_level="UNKNOWN",
+                confidence=None,
+                depth_confidence=None,
+                reasoning_confidence=None,
+                communication_confidence=None,
+                strengths=[],
+                gaps=[],
+                evidence_ids=[],
+                objectives=objectives_map
+            )
+
         knowledge_model = CandidateKnowledgeModel(
             candidate_id=candidate_id,
-            topics={}
+            topics=topics,
+            misconceptions=[],
+            global_signals={
+                "communication": None,
+                "reasoning": None,
+                "confidence": None,
+            }
         )
 
         # Layer 4: EvidenceLedger (supporting evidence)
@@ -103,7 +147,7 @@ class SessionManager:
         return True
 
     def apply_evidence_analysis(
-        self, session_id: str, analysis: CandidateEvidenceAnalysis, question_id: str = ""
+        self, session_id: str, analysis: CandidateEvidenceAnalysis, question_id: str = "", objective_id: Optional[str] = None
     ) -> Optional[EvidenceItem]:
         """
         Backend validation and state update layer for LLM analysis.
@@ -132,6 +176,7 @@ class SessionManager:
             candidate_id=knowledge_model.candidate_id,
             curriculum_day=analysis.curriculum_day,
             topic=analysis.topic,
+            objective_id=objective_id,
             candidate_claim=analysis.candidate_claim,
             evidence_text=analysis.evidence_text,
             assessment=analysis.assessment_type,
@@ -148,10 +193,14 @@ class SessionManager:
                 curriculum_day=day,
                 topic=analysis.topic,
                 understanding_level="UNKNOWN",
-                confidence=0.0,
+                confidence=None,
+                depth_confidence=None,
+                reasoning_confidence=None,
+                communication_confidence=None,
                 strengths=[],
                 gaps=[],
                 evidence_ids=[],
+                objectives={}
             )
         )
 
@@ -161,6 +210,14 @@ class SessionManager:
         topic_knowledge.gaps = list(set(topic_knowledge.gaps + analysis.gaps))
         if evidence_id not in topic_knowledge.evidence_ids:
             topic_knowledge.evidence_ids.append(evidence_id)
+
+        # 3. Update specific ObjectiveKnowledge if objective_id is provided
+        if objective_id and objective_id in topic_knowledge.objectives:
+            obj_knowledge = topic_knowledge.objectives[objective_id]
+            obj_knowledge.understanding_level = analysis.understanding_assessment
+            obj_knowledge.confidence = analysis.confidence
+            if evidence_id not in obj_knowledge.evidence_ids:
+                obj_knowledge.evidence_ids.append(evidence_id)
 
         knowledge_model.topics[day] = topic_knowledge
         return item
