@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-app: #080B0A;
+  --color-surface-primary: #101513;
+  --color-surface-secondary: #151B17;
+  --color-accent-primary: #C8FF3D;
+  --color-accent-secondary: #7DFFB2;
+  --color-text-primary: #F3F7F2;
+  --color-text-secondary: #B1BBB3;
+  --color-text-muted: #727D75;
+  --color-border-subtle: #263029;
+  
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+:root {
+  /* Midnight Electric Palette Design Tokens */
+  --bg-app: #080B0A;
+  --surface-primary: #101513;
+  --surface-secondary: #151B17;
+  --accent-primary: #C8FF3D;       /* Electric Lime - CTAs, Highlights, Active States */
+  --accent-secondary: #7DFFB2;     /* Soft Mint - Badges, Metrics, Success States */
+  --text-primary: #F3F7F2;         /* High Contrast Headlines & Key Text */
+  --text-secondary: #B1BBB3;       /* Body Paragraphs & Subtitles */
+  --text-muted: #727D75;           /* Captions, Timestamps, Labels */
+  --border-subtle: #263029;        /* Subtle Technical Borders */
+
+  /* Glow Effects */
+  --glow-accent: 0 0 20px rgba(200, 255, 61, 0.18);
+  --glow-accent-hover: 0 0 25px rgba(200, 255, 61, 0.35);
+  --glow-mint: 0 0 20px rgba(125, 255, 178, 0.18);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  min-height: 100vh;
+  margin: 0;
+}
+
+/* Custom Technical Utility Classes */
+.bg-app-theme { background-color: var(--bg-app); }
+.bg-surface-primary { background-color: var(--surface-primary); }
+.bg-surface-secondary { background-color: var(--surface-secondary); }
+
+.text-app-primary { color: var(--text-primary); }
+.text-app-secondary { color: var(--text-secondary); }
+.text-app-muted { color: var(--text-muted); }
+.text-app-accent { color: var(--accent-primary); }
+.text-app-mint { color: var(--accent-secondary); }
+
+.border-app-subtle { border-color: var(--border-subtle); }
+.border-app-accent { border-color: var(--accent-primary); }
+
+.glow-accent {
+  box-shadow: var(--glow-accent);
+}
+
+.glow-accent-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glow-accent-hover:hover {
+  box-shadow: var(--glow-accent-hover);
+  border-color: rgba(200, 255, 61, 0.6);
+}
+
+/* Custom Scrollbar for Technical Feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
