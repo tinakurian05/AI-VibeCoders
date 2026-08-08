@@ -76,8 +76,21 @@ class MemoryService:
 
         endpoint = f"{self.base_url}/v1/episodes"
         group_id = f"interview:{session_id}"
+
+        # Construct top-level content string required by Breeth API contract
+        content_lines = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = str(msg.get("role", "speaker")).title()
+                text = str(msg.get("content", ""))
+                content_lines.append(f"{role}: {text}")
+            else:
+                content_lines.append(str(msg))
+        content_text = "\n".join(content_lines) if content_lines else "Interview Episode"
+
         payload = {
             "group_id": group_id,
+            "content": content_text,
             "messages": messages,
             "metadata": metadata or {}
         }
