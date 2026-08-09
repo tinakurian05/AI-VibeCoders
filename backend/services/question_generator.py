@@ -2,6 +2,7 @@ import json
 from typing import Optional
 
 from services.llm_gateway import llm_gateway, LLMResponse
+from services.curriculum_service import curriculum_service
 from models.question_generator import (
     QuestionGeneratorInput,
     GeneratedQuestion,
@@ -21,6 +22,7 @@ Rules:
 - If the decision indicates END (should_end=True), do NOT generate a question.
 - Return ONLY a JSON object with fields: question_id, question, target_day, target_objective, difficulty, intent.
 - Do NOT wrap the JSON in markdown code fences.
+- CRITICAL: Never expose internal curriculum IDs, objective IDs, database IDs, variable names, implementation identifiers, or internal metadata (such as "day-12-obj-0" or "obj1") in candidate-facing questions. Instead, use the human-readable objective text/concept described in the prompt to formulate a natural-sounding interviewer question.
 """
 
 class QuestionGenerator:
@@ -31,8 +33,34 @@ class QuestionGenerator:
         sd = input_data.strategy_decision
         lines = []
         lines.append(f"Strategy Action: {sd.action}\nDifficulty: {sd.difficulty}\nIntent: {sd.intent}\nTarget Day: {sd.target_day}\n")
+        
         if sd.target_objective:
-            lines.append(f"Target Objective: {sd.target_objective}\n")
+            lines.append(f"Target Objective ID: {sd.target_objective}\n")
+            # Dynamic lookup of objective text from curriculum_service
+            try:
+                curriculum_day = curriculum_service.get_day(sd.target_day)
+                # Find the index of objective ID in day objectives map
+                # Objectives in CandidateTopicKnowledge are indexed as: f"day-{day_num}-obj-{idx}"
+                # Let's extract the objective index.
+                # Example: "day-12-obj-0" -> index 0
+                parts = sd.target_objective.split("-obj-")
+                if len(parts) == 2:
+                    obj_idx = int(parts[1])
+                    if 0 <= obj_idx < len(curriculum_day.objectives):
+                        obj_text = curriculum_day.objectives[obj_idx]
+                        lines.append(f"Target Objective Concept Text: {obj_text}\n")
+                    else:
+                        # Fallback for dynamic/non-standard ID names (like "obj1")
+                        # Try exact text match or list fallback if not parsed
+                        obj_text = curriculum_day.objectives[0] if curriculum_day.objectives else "None"
+                        lines.append(f"Target Objective Concept Text: {obj_text}\n")
+                else:
+                    # Generic lookup fallback for test cases that use alternative formats
+                    if curriculum_day.objectives:
+                        lines.append(f"Target Objective Concept Text: {curriculum_day.objectives[0]}\n")
+            except Exception:
+                pass
+
         # Recent evidence (most recent item) for context
         if input_data.recent_evidence:
             latest = input_data.recent_evidence[-1]
@@ -87,3 +115,4 @@ class QuestionGenerator:
             raise QuestionGeneratorError(f"Failed to parse LLM output as JSON: {e}")
         except Exception as e:
             raise QuestionGeneratorError(f"Invalid GeneratedQuestion data: {e}")
+

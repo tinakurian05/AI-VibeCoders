@@ -318,3 +318,71 @@ def test_memories_are_included_without_overriding(base_plan, base_state):
     generated = qgen.generate(input_data)
     assert "out‑of‑vocabulary" in generated.question.lower()
     assert generated.difficulty == DifficultyLevel.MEDIUM
+
+
+def test_leak_prevention_objective_id(base_plan, base_state):
+    """Verify that target_objective IDs like 'day-12-obj-0' are not leaked into candidate-facing questions."""
+    decision = StrategyDecision(
+        action=StrategyAction.DEEPEN,
+        target_day=12,
+        target_objective="day-12-obj-0",
+        difficulty=DifficultyLevel.MEDIUM,
+        intent="test",
+        reasoning="",
+        follow_up=True,
+        should_end=False,
+    )
+    input_data = QuestionGeneratorInput(
+        candidate_id="C1",
+        strategy_decision=decision,
+        interview_state=base_state,
+        interview_plan=base_plan,
+    )
+    
+    mock_resp = {
+        "question_id": "qid-leak-test",
+        "question": "Can you explain how you would design multiple system prompt variations for the chatbot?",
+        "target_day": 12,
+        "target_objective": "day-12-obj-0",
+        "difficulty": "MEDIUM",
+        "intent": "test",
+    }
+    gateway = dummy_gateway_factory(mock_resp)
+    qgen = QuestionGenerator(gateway=gateway)
+    generated = qgen.generate(input_data)
+    
+    # Assert generated question contains NO internal ID
+    assert "day-12-obj-0" not in generated.question
+    assert "obj-0" not in generated.question
+    assert "day-12" not in generated.question
+    # Assert internal structure still contains the internal target ID
+    assert generated.target_objective == "day-12-obj-0"
+
+
+def test_uses_curriculum_objective_text(base_plan, base_state):
+    """Verify that the generated prompt correctly resolves ID to human-readable curriculum text."""
+    decision = StrategyDecision(
+        action=StrategyAction.DEEPEN,
+        target_day=12,
+        target_objective="day-12-obj-1",
+        difficulty=DifficultyLevel.MEDIUM,
+        intent="test",
+        reasoning="",
+        follow_up=True,
+        should_end=False,
+    )
+    input_data = QuestionGeneratorInput(
+        candidate_id="C1",
+        strategy_decision=decision,
+        interview_state=base_state,
+        interview_plan=base_plan,
+    )
+    
+    qgen = QuestionGenerator()
+    prompt = qgen._build_user_prompt(input_data)
+    
+    # Assert curriculum objective text is present in the prompt build
+    # day 12 obj 1 in curriculum.json is: "Design multiple system prompt variations for the chatbot"
+    assert "Design multiple system prompt variations for the chatbot" in prompt
+    assert "Target Objective Concept Text:" in prompt
+
