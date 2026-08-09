@@ -11,6 +11,28 @@ An AI-powered, adaptive technical interview platform that evaluates software eng
 The system dynamically adjusts interview difficulty, topic depth, and questioning strategy in real time based on the candidate's background, past learning context, and demonstrated technical understanding during the conversation.
 
 ---
+## 🚀 Try the Live Demo
+
+**[Launch AI Technical Interviewer](https://ai-vibecoders-1.onrender.com)**
+
+The deployed application includes:
+
+- 👤 Candidate profile selection
+- 🧠 Curriculum-aware interview planning
+- 🤖 AI-generated technical questions
+- 🔄 Adaptive questioning based on candidate answers
+- 📊 Answer analysis and knowledge tracking
+- 🧠 Interview memory powered by Breeth
+- ⚡ Groq-powered question generation
+
+### Deployment
+
+| Service | URL |
+|---|---|
+| Frontend | https://ai-vibecoders-1.onrender.com |
+| Backend API |https://ai-vibecoders.onrender.com |
+| Health Check | https://ai-vibecoders.onrender.com/health |
+| Candidates API | https://ai-vibecoders.onrender.com/api/candidates |
 
 ## 🔄 Adaptive Interview Loop
 
