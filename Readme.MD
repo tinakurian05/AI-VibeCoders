@@ -11,6 +11,8 @@ An AI-powered, adaptive technical interview platform that evaluates software eng
 The system dynamically adjusts interview difficulty, topic depth, and questioning strategy in real time based on the candidate's background, past learning context, and demonstrated technical understanding during the conversation.
 
 ---
+### 📁 Project Resources
+##Demo Video & Documentation:** [Google Drive](https://drive.google.com/file/d/13GFePAXn--C65CJ7Hwte5XPx7V4wH_zf/view?usp=sharing)
 ## 🚀 Try the Live Demo
 
 **[Launch AI Technical Interviewer](https://ai-vibecoders-1.onrender.com)**
