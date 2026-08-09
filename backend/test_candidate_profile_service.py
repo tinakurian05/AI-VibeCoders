@@ -1,5 +1,6 @@
 import os
 import sys
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 # Ensure backend directory is in python path
@@ -102,44 +103,85 @@ def test_9_failed_mission_not_in_completed_days():
     print("[PASS] 9. Mission with passed=false is NOT in completed_days.")
 
 
-def test_10_api_interview_behavior_still_works():
+@patch("services.interview_orchestrator.QuestionGenerator")
+@patch("services.interview_orchestrator.AnswerAnalyzer")
+def test_10_api_interview_behavior_still_works(MockAnalyzerClass, MockQGenClass):
     """10. Existing POST /api/interview behavior still works."""
     session_manager.clear_all()
-    # First request
-    payload1 = {
-        "sessionId": "session-test-2a",
-        "candidate": {
-            "member": {
-                "id": "CAND-001",
-                "name": "Sarah Johnson",
-                "jobRole": "Senior Data Engineer"
+
+    # Mock QGen
+    mock_qgen = MagicMock()
+    from models.question_generator import GeneratedQuestion
+    from models.strategy import DifficultyLevel
+    mock_qgen.generate.return_value = GeneratedQuestion(
+        question_id="q-mock-1",
+        question="Can you explain how RAG pipelines handle document retrieval at scale?",
+        target_day=21,
+        target_objective="day-21-obj-0",
+        difficulty=DifficultyLevel.MEDIUM,
+        intent="initial_topic_probe",
+    )
+
+    # Mock Analyzer
+    mock_analyzer = MagicMock()
+    from models.interview import CandidateEvidenceAnalysis
+    mock_analyzer.analyze_with_memory.return_value = CandidateEvidenceAnalysis(
+        curriculum_day=21,
+        topic="RAG",
+        understanding_assessment="MEDIUM",
+        assessment_type="supports_understanding",
+        confidence=0.7,
+        strengths=["Basic understanding"],
+        gaps=["Lacks depth"],
+        evidence_text="Candidate showed partial understanding",
+        candidate_claim="RAG uses retrieval",
+        follow_up_recommended=True,
+    )
+
+    from services.interview_orchestrator import interview_orchestrator
+    original_qgen = interview_orchestrator.question_generator
+    original_analyzer = interview_orchestrator.answer_analyzer
+
+    interview_orchestrator.question_generator = mock_qgen
+    interview_orchestrator.answer_analyzer = mock_analyzer
+
+    try:
+        # First request
+        payload1 = {
+            "sessionId": "session-test-2a",
+            "candidate": {
+                "member": {
+                    "id": "CAND-001",
+                    "name": "Sarah Johnson",
+                    "jobRole": "Senior Data Engineer"
+                }
             }
         }
-    }
-    resp1 = client.post("/api/interview", json=payload1)
-    assert resp1.status_code == 200
-    assert resp1.json() == {
-        "reply": "Welcome. Let's begin your interview.",
-        "done": False,
-        "feedback": None
-    }
-    
-    # Verify candidate_state was created in session_manager
-    session = session_manager.get_session("session-test-2a")
-    assert session is not None
-    assert session["candidate_state"] is not None
-    assert session["candidate_state"].candidate_id == "CAND-001"
-    assert session["candidate_state"].name == "Sarah Johnson"
+        resp1 = client.post("/api/interview", json=payload1)
+        assert resp1.status_code == 200
+        assert resp1.json()["done"] is False
+        assert len(resp1.json()["reply"]) > 0
 
-    # Subsequent request
-    payload2 = {
-        "sessionId": "session-test-2a",
-        "message": "Hello, I am ready for the technical questions."
-    }
-    resp2 = client.post("/api/interview", json=payload2)
-    assert resp2.status_code == 200
-    assert resp2.json()["reply"] == "Response received. Interview processing will be implemented in the next step."
-    print("[PASS] 10. Existing POST /api/interview behavior still works.")
+        # Verify candidate_state was created in session_manager
+        session = session_manager.get_session("session-test-2a")
+        assert session is not None
+        assert session["candidate_state"] is not None
+        assert session["candidate_state"].candidate_id == "CAND-001"
+        assert session["candidate_state"].name == "Sarah Johnson"
+
+        # Subsequent request
+        payload2 = {
+            "sessionId": "session-test-2a",
+            "message": "Hello, I am ready for the technical questions."
+        }
+        resp2 = client.post("/api/interview", json=payload2)
+        assert resp2.status_code == 200
+        assert resp2.json()["done"] is False
+        assert len(resp2.json()["reply"]) > 0
+        print("[PASS] 10. Existing POST /api/interview behavior still works.")
+    finally:
+        interview_orchestrator.question_generator = original_qgen
+        interview_orchestrator.answer_analyzer = original_analyzer
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
 from models.interview import InterviewRequest, InterviewResponse
 from services.session_manager import session_manager
+from services.interview_orchestrator import interview_orchestrator, OrchestratorError
+from models.analyzer import AnalyzerError
+from models.question_generator import QuestionGeneratorError
 
 router = APIRouter(prefix="/api", tags=["Interview"])
 
@@ -9,10 +12,11 @@ router = APIRouter(prefix="/api", tags=["Interview"])
 def handle_interview(request: InterviewRequest) -> InterviewResponse:
     """
     POST /api/interview
-    
+
     Handles interview turns maintaining state via sessionId.
-    - First request: includes candidate object -> initializes session.
-    - Subsequent requests: includes candidate's response message -> updates session.
+    - First request: includes candidate object -> initializes session, generates first question.
+    - Subsequent requests: includes candidate's response message -> processes answer through
+      the full interview pipeline (AnswerAnalyzer → SessionManager → StrategyEngine → QuestionGenerator).
     """
     try:
         session_id = request.sessionId
@@ -21,42 +25,55 @@ def handle_interview(request: InterviewRequest) -> InterviewResponse:
         if request.candidate is not None:
             if not session_manager.session_exists(session_id):
                 session_manager.create_session(session_id, request.candidate)
-            
-            return InterviewResponse(
-                reply="Welcome. Let's begin your interview.",
-                done=False
-            )
+
+            # Generate and return the first interview question
+            return interview_orchestrator.start_interview(session_id)
 
         # 2. Subsequent turn request with candidate message
         elif request.message is not None:
-            session = session_manager.get_session(session_id)
-            if not session:
+            if not session_manager.session_exists(session_id):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Session '{session_id}' not found."
+                    detail=f"Session '{session_id}' not found.",
                 )
 
-            # Store the message in conversation history
-            session_manager.add_message(session_id, "user", request.message)
-
-            return InterviewResponse(
-                reply="Response received. Interview processing will be implemented in the next step.",
-                done=False
-            )
+            return interview_orchestrator.process_answer(session_id, request.message)
 
         # 3. Payload missing both candidate and message
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Request payload must contain either 'candidate' or 'message'."
+                detail="Request payload must contain either 'candidate' or 'message'.",
             )
 
     except HTTPException:
         # Re-raise explicit HTTP exceptions
         raise
-    except Exception as e:
+    except OrchestratorError as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        elif "already completed" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An internal error occurred while processing the interview.",
+            )
+    except (AnalyzerError, QuestionGeneratorError):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred while processing the interview.",
+        )
+    except Exception:
         # Catch internal unexpected exceptions and mask detailed tracebacks
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal server error occurred while processing the interview request."
+            detail="An internal server error occurred while processing the interview request.",
         )

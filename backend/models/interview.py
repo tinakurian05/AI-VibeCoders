@@ -144,6 +144,7 @@ class InterviewState(BaseModel):
     question_count: int = 0
     interview_plan: Optional[InterviewPlan] = None
     current_question: Optional[str] = None
+    current_question_meta: Optional[Dict[str, Any]] = None
     conversation: List[Dict[str, str]] = []
     covered_days: List[int] = []
     completed_question_ids: List[str] = []
