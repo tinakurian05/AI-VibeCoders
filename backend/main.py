@@ -1,6 +1,17 @@
+import os
+import sys
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from api.interview import router as interview_router
+
+# Ensure backend directory is in sys.path
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+try:
+    from backend.api.interview import router as interview_router
+except ModuleNotFoundError:
+    from api.interview import router as interview_router
 
 # Create FastAPI application instance
 app = FastAPI(
