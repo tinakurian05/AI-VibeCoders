@@ -39,7 +39,7 @@ export default function HeroSection() {
           <div className="pt-2 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               <Link 
-                to="/interview"
+                to="/candidates"
                 className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl bg-[#C8FF3D] text-[#080B0A] font-bold text-base transition-all duration-200 hover:bg-[#d5ff66] glow-accent-hover active:scale-[0.98] cursor-pointer shadow-lg"
               >
                 <span>Start Interview</span>

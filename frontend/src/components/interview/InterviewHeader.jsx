@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 
-export default function InterviewHeader({ currentQuestion = 3, totalQuestions = '8+' }) {
+export default function InterviewHeader({ currentQuestion = 3, totalQuestions = '8+', candidate }) {
   return (
-    <header className="border-b border-[#263029] bg-[#101513] px-4 sm:px-8 py-3 flex items-center justify-between sticky top-0 z-40">
+    <header className="border-b border-[#263029] bg-[#101513] px-4 sm:px-8 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40">
       
       {/* Left: Brand / Title */}
       <Link to="/" className="flex items-center gap-2 group">
@@ -19,6 +19,15 @@ export default function InterviewHeader({ currentQuestion = 3, totalQuestions = 
           </span>
         </div>
       </Link>
+
+      {/* Candidate Info */}
+      {candidate && (
+        <div className="flex items-center gap-2 text-xs font-mono bg-[#151B17] border border-[#263029] px-3 py-1 rounded-md">
+          <span className="text-[#727D75]">Interviewing:</span>
+          <span className="text-[#C8FF3D] font-bold">{candidate.name}</span>
+          <span className="text-[#727D75] truncate max-w-[150px] sm:max-w-none">({candidate.role})</span>
+        </div>
+      )}
 
       {/* Center: Question Counter */}
       <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-[#151B17] border border-[#263029] text-xs font-mono">
@@ -42,3 +51,4 @@ export default function InterviewHeader({ currentQuestion = 3, totalQuestions = 
     </header>
   )
 }
+

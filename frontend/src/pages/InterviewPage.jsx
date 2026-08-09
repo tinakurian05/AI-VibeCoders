@@ -45,6 +45,14 @@ const MOCK_AI_RESPONSES = [
 ]
 
 export default function InterviewPage() {
+  const [candidate] = useState(() => {
+    try {
+      const saved = localStorage.getItem('selectedCandidate')
+      return saved ? JSON.parse(saved) : { name: 'Sarah Johnson', role: 'Senior Data Engineer' }
+    } catch (e) {
+      return { name: 'Sarah Johnson', role: 'Senior Data Engineer' }
+    }
+  })
   const [messages, setMessages] = useState(INITIAL_MESSAGES)
   const [isThinking, setIsThinking] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(3)
@@ -91,7 +99,7 @@ export default function InterviewPage() {
     <div className="h-screen w-screen bg-[#080B0A] text-[#F3F7F2] font-sans flex flex-col overflow-hidden selection:bg-[#C8FF3D] selection:text-[#080B0A]">
       
       {/* 1. Header & 9. Progress Bar */}
-      <InterviewHeader currentQuestion={currentQuestion} totalQuestions="8+" />
+      <InterviewHeader currentQuestion={currentQuestion} totalQuestions="8+" candidate={candidate} />
       <InterviewProgress currentQuestion={currentQuestion} totalNum={8} />
 
       {/* 2. Desktop Two-Column Main Layout */}
