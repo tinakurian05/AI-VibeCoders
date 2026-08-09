@@ -274,10 +274,11 @@ class CandidateEvidenceAnalysis(BaseModel):
 class InterviewRequest(BaseModel):
     """
     Schema for incoming interview request payload.
-    Supports either initializing an interview with a candidate object
+    Supports either initializing an interview with a candidateId/candidate object
     or submitting a candidate response message during an ongoing session.
     """
     sessionId: str
+    candidateId: Optional[str] = None
     candidate: Optional[Dict[str, Any]] = None
     message: Optional[str] = None
 

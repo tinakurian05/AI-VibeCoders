@@ -200,6 +200,9 @@ class InterviewOrchestrator:
         except AnalyzerError as e:
             raise OrchestratorError(f"Answer analysis failed: {e}")
 
+        # Store latest analysis in the session dict for diagnostic endpoints
+        session["latest_analysis"] = analysis
+
         # ------------------------------------------------------------------
         # Step 4: State mutation via SessionManager
         # ------------------------------------------------------------------

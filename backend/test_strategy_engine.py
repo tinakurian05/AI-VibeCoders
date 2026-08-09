@@ -197,3 +197,130 @@ def test_18_determinism(engine, base_input):
     d2 = engine.decide(base_input)
     assert d1.action == d2.action
     assert d1.target_day == d2.target_day
+
+
+# ============================================================
+# Rule D fix tests — Cases A through H
+# ============================================================
+
+def _make_analysis(
+    understanding: str,
+    gaps: list,
+    follow_up_recommended: bool,
+    confidence: float = 0.9,
+    assessment_type: str = "supports_understanding",
+) -> "CandidateEvidenceAnalysis":
+    return CandidateEvidenceAnalysis(
+        curriculum_day=21,
+        topic="RAG",
+        understanding_assessment=understanding,
+        assessment_type=assessment_type,
+        confidence=confidence,
+        strengths=["Good"],
+        gaps=gaps,
+        evidence_text="Evidence text",
+        candidate_claim="Claim",
+        follow_up_recommended=follow_up_recommended,
+    )
+
+
+def test_A_high_no_gaps_follow_up_false_deepens(engine, base_input):
+    """Case A: HIGH + no gaps + follow_up=False → DEEPEN (existing strong-answer behavior preserved)."""
+    base_input.latest_analysis = _make_analysis("HIGH", [], False)
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.DEEPEN
+    assert decision.difficulty == DifficultyLevel.HARD
+    assert decision.intent == "probe_unexplored_objective"
+
+
+def test_B_high_minor_gap_follow_up_false_deepens(engine, base_input):
+    """Case B: HIGH + minor gap + follow_up=False → DEEPEN (Rule D fix: advances instead of generic fallback)."""
+    base_input.latest_analysis = _make_analysis(
+        "HIGH",
+        ["Did not explicitly articulate one edge case"],
+        False,
+        confidence=0.85,
+    )
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.DEEPEN, (
+        f"Expected DEEPEN but got {decision.action} (intent={decision.intent}). "
+        "Rule D should fire for HIGH + minor gap when follow_up_recommended=False."
+    )
+    assert decision.difficulty == DifficultyLevel.HARD
+    assert decision.intent == "probe_unexplored_objective"
+
+
+def test_C_high_gaps_follow_up_true_follows_up(engine, base_input):
+    """Case C: HIGH + gaps + follow_up=True → FOLLOW_UP (analyzer explicitly requests follow-up)."""
+    base_input.latest_analysis = _make_analysis(
+        "HIGH",
+        ["Missed discussing fault tolerance implications"],
+        True,
+        confidence=0.85,
+    )
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.FOLLOW_UP
+    assert decision.difficulty == DifficultyLevel.MEDIUM
+    assert decision.intent == "address_specific_gap"
+
+
+def test_D_low_understanding_probes_fundamental_gap(engine, base_input):
+    """Case D: LOW understanding → probe_fundamental_gap / EASY (existing Rule E preserved)."""
+    base_input.latest_analysis = _make_analysis("LOW", ["Does not understand basics"], True)
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.FOLLOW_UP
+    assert decision.difficulty == DifficultyLevel.EASY
+    assert decision.intent == "probe_fundamental_gap"
+
+
+def test_E_medium_understanding_follows_up(engine, base_input):
+    """Case E: MEDIUM understanding → FOLLOW_UP / MEDIUM (existing Rule C preserved)."""
+    base_input.latest_analysis = _make_analysis("MEDIUM", ["Shallow on X"], True)
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.FOLLOW_UP
+    assert decision.difficulty == DifficultyLevel.MEDIUM
+
+
+def test_F_unknown_low_confidence_clarifies(engine, base_input):
+    """Case F: UNKNOWN / low confidence → CLARIFY / EASY (existing Rule A preserved)."""
+    base_input.latest_analysis = _make_analysis(
+        "UNKNOWN", [], False, confidence=0.3, assessment_type="ambiguous"
+    )
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.CLARIFY
+    assert decision.difficulty == DifficultyLevel.EASY
+
+
+def test_G_high_follow_up_false_no_unmet_objectives_moves_topic(engine, base_input):
+    """Case G: HIGH + follow_up=False, all objectives met → MOVE_TOPIC (end-of-day behavior preserved)."""
+    # Mark all day-21 objectives as HIGH so no unmet objectives remain on day 21
+    base_input.knowledge_model.topics[21].objectives["obj1"].understanding_level = "HIGH"
+    base_input.knowledge_model.topics[21].objectives["obj2"].understanding_level = "HIGH"
+    base_input.latest_analysis = _make_analysis("HIGH", [], False)
+    # Day 22 is in the plan and not yet covered → should MOVE_TOPIC
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.MOVE_TOPIC
+    assert decision.target_day == 22
+
+
+def test_H_target_objective_is_unmet(engine, base_input):
+    """Case H: target_objective must be one of the actually unmet objectives."""
+    # obj1=HIGH (met), obj2=UNKNOWN (unmet) — established in base_input fixture
+    base_input.latest_analysis = _make_analysis("HIGH", ["minor gap"], False)
+    decision = engine.decide(base_input)
+    # The only unmet objective is obj2
+    assert decision.target_objective == "obj2", (
+        f"Expected target_objective='obj2' (the unmet one) but got {decision.target_objective!r}"
+    )
+
+
+def test_misconception_in_gap_text_still_caught_before_rule_d(engine, base_input):
+    """Regression: even with HIGH understanding, a misconception in gap text fires Rule B before Rule D."""
+    base_input.latest_analysis = _make_analysis(
+        "HIGH",
+        ["Candidate has a misconception about vector indexing"],
+        False,
+    )
+    decision = engine.decide(base_input)
+    assert decision.action == StrategyAction.FOLLOW_UP
+    assert decision.intent == "address_misconception"

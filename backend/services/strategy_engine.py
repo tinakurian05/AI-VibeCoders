@@ -105,8 +105,8 @@ class StrategyEngine:
                 should_end=False
             )
             
-        # Rule C: Partial understanding
-        if understanding == "MEDIUM" or (gaps and analysis.follow_up_recommended):
+        # Rule C: Partial understanding, or HIGH understanding where analyzer explicitly recommends follow-up
+        if understanding == "MEDIUM" or (understanding != "HIGH" and gaps and analysis.follow_up_recommended) or (understanding == "HIGH" and analysis.follow_up_recommended):
             return StrategyDecision(
                 action=StrategyAction.FOLLOW_UP,
                 target_day=day,
@@ -118,8 +118,10 @@ class StrategyEngine:
                 should_end=False
             )
             
-        # Rule D: Strong answer
-        if understanding == "HIGH" and not gaps:
+        # Rule D: Strong answer — HIGH understanding with no explicit follow-up recommendation.
+        # Uses follow_up_recommended (not mere gap presence) as the authoritative advancement signal.
+        # This fires for HIGH + no gaps, and for HIGH + minor gaps when follow_up_recommended=False.
+        if understanding == "HIGH" and not analysis.follow_up_recommended:
             if unmet_objectives:
                 return StrategyDecision(
                     action=StrategyAction.DEEPEN,
@@ -157,8 +159,7 @@ class StrategyEngine:
                         )
                     else:
                         # Genuine exhaustion but constraints not met.
-                        # Either end anyway if physically impossible, or force deepen.
-                        # Rule H says: do not end unless genuinely impossible. If there are no more planned days, it's impossible.
+                        # Rule H: do not end unless genuinely impossible. No more planned days → impossible.
                         return StrategyDecision(
                             action=StrategyAction.END,
                             target_day=day,
