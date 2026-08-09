@@ -1,41 +1,44 @@
-from typing import Optional, Dict, Any, List
 import uuid
+from typing import Dict, Any, Optional, List
 from models.interview import (
     CandidateState,
     InterviewState,
+    InterviewPlan,
     CandidateKnowledgeModel,
     CandidateTopicKnowledge,
+    ObjectiveKnowledge,
     EvidenceLedger,
     EvidenceItem,
     CandidateEvidenceAnalysis,
 )
 from services.candidate_profile_service import candidate_profile_service
+from services.curriculum_service import curriculum_service
+from services.interview_planner import interview_planner
 
 
 class SessionManager:
     """
-    Service responsible for managing interview sessions in memory across four core layers:
-    1. CandidateState: Pre-interview candidate facts (profile, completed/skipped missions, signals).
+    In-memory session manager orchestrating the 4 distinct state layers:
+    
+    1. CandidateState: Immutable pre-interview facts from candidates.json.
     2. InterviewState: Live interview progress (turn count, questions, plan, status).
-    3. CandidateKnowledgeModel: Derived technical understanding based on live evidence (initializes UNKNOWN).
-    4. EvidenceLedger: Store of verified evidence items supporting knowledge model updates.
+    3. CandidateKnowledgeModel: Derived technical belief state updated ONLY via evidence analysis.
+    4. EvidenceLedger: Linked log of evidence items supporting technical belief state.
     """
 
     def __init__(self) -> None:
-        # In-memory dictionary mapping session_id -> session data dict
         self._sessions: Dict[str, Dict[str, Any]] = {}
 
-    def create_session(self, session_id: str, candidate: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Initialize and store a new session managing all 4 architectural state layers.
-        """
-        # Load CurriculumState
-        from services.curriculum_service import curriculum_service
-        from services.interview_planner import interview_planner
-        
-        curriculum_state = curriculum_service.get_state()
+    def clear_all(self) -> None:
+        """Clear all active sessions (useful for test isolation)."""
+        self._sessions.clear()
 
-        # Layer 1: CandidateState (pre-interview facts)
+    def create_session(self, session_id: str, candidate: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Initialize a new session maintaining clear 4-layer state isolation."""
+        # Ensure curriculum state is available via load_curriculum()
+        curriculum_state = curriculum_service.load_curriculum()
+        
+        # Layer 1: CandidateState (pre-interview facts ONLY)
         candidate_state: Optional[CandidateState] = None
         candidate_id = "UNKNOWN"
         interview_plan: Optional[InterviewPlan] = None
@@ -43,7 +46,6 @@ class SessionManager:
             try:
                 candidate_state = candidate_profile_service.build_candidate_state(candidate)
                 candidate_id = candidate_state.candidate_id
-                # Generate InterviewPlan if candidate state is successfully built
                 interview_plan = interview_planner.plan_interview(candidate_state, curriculum_state)
             except Exception:
                 candidate_state = None
@@ -62,8 +64,7 @@ class SessionManager:
             interview_completed=False,
         )
 
-        # Layer 3: CandidateKnowledgeModel (initialized empty / UNKNOWN / None for confidence)
-        from models.interview import ObjectiveKnowledge
+        # Layer 3: CandidateKnowledgeModel
         topics = {}
         for day_num, day_obj in curriculum_state.days.items():
             objectives_map = {}
@@ -102,7 +103,7 @@ class SessionManager:
             }
         )
 
-        # Layer 4: EvidenceLedger (supporting evidence)
+        # Layer 4: EvidenceLedger
         evidence_ledger = EvidenceLedger(
             session_id=session_id,
             items=[]
@@ -112,11 +113,13 @@ class SessionManager:
             "session_id": session_id,
             "candidate": candidate,
             "candidate_state": candidate_state,
+            "curriculum_state": curriculum_state,
             "interview_state": interview_state,
             "knowledge_model": knowledge_model,
             "evidence_ledger": evidence_ledger,
             "question_count": 0,
             "conversation": [],
+            "conversation_history": [],
             "done": False,
         }
         self._sessions[session_id] = session_data
@@ -138,8 +141,9 @@ class SessionManager:
         
         message_dict = {"role": role, "content": content}
         session["conversation"].append(message_dict)
+        if "conversation_history" in session:
+            session["conversation_history"].append(message_dict)
         
-        # Update Live InterviewState conversation
         if session.get("interview_state"):
             session["interview_state"].conversation.append(message_dict)
             session["interview_state"].current_turn += 1
@@ -147,85 +151,71 @@ class SessionManager:
         return True
 
     def apply_evidence_analysis(
-        self, session_id: str, analysis: CandidateEvidenceAnalysis, question_id: str = "", objective_id: Optional[str] = None
+        self,
+        session_id: str,
+        analysis: CandidateEvidenceAnalysis,
+        question_id: str = "",
+        objective_id: Optional[str] = None
     ) -> Optional[EvidenceItem]:
         """
-        Backend validation and state update layer for LLM analysis.
+        Validate and apply a CandidateEvidenceAnalysis object to session state.
         
-        Takes structured CandidateEvidenceAnalysis, validates it, constructs
-        an EvidenceItem for EvidenceLedger, and updates CandidateKnowledgeModel.
-        
-        IMPORTANT: The LLM returns analysis data only. This backend method executes
-        the actual state mutation.
+        - Creates an EvidenceItem and appends it to EvidenceLedger.
+        - Updates CandidateKnowledgeModel topic/objective scores based on evidence.
         """
         session = self.get_session(session_id)
         if not session:
             return None
 
-        evidence_ledger: EvidenceLedger = session["evidence_ledger"]
-        knowledge_model: CandidateKnowledgeModel = session["knowledge_model"]
+        ledger: EvidenceLedger = session["evidence_ledger"]
+        knowledge: CandidateKnowledgeModel = session["knowledge_model"]
+        interview_state: InterviewState = session["interview_state"]
 
-        # 1. Construct and record EvidenceItem
-        evidence_id = f"ev-{uuid.uuid4().hex[:8]}"
-        turn = session["interview_state"].current_turn if session.get("interview_state") else 0
+        turn = interview_state.question_count + 1
+        ev_id = f"ev-{uuid.uuid4().hex[:8]}"
+        cand_id = session["candidate_state"].candidate_id if session.get("candidate_state") else interview_state.candidate_id
 
-        item = EvidenceItem(
-            evidence_id=evidence_id,
+        ev_item = EvidenceItem(
+            evidence_id=ev_id,
             session_id=session_id,
             question_id=question_id or f"q-{turn}",
-            candidate_id=knowledge_model.candidate_id,
+            candidate_id=cand_id,
             curriculum_day=analysis.curriculum_day,
             topic=analysis.topic,
             objective_id=objective_id,
             candidate_claim=analysis.candidate_claim,
             evidence_text=analysis.evidence_text,
-            assessment=analysis.assessment_type,
+            assessment=analysis.assessment_type or analysis.understanding_assessment,
             confidence=analysis.confidence,
             turn=turn,
         )
-        evidence_ledger.add_evidence(item)
+        
+        ledger.items.append(ev_item)
 
-        # 2. Update CandidateKnowledgeModel for topic
         day = analysis.curriculum_day
-        topic_knowledge = knowledge_model.topics.get(
-            day,
-            CandidateTopicKnowledge(
-                curriculum_day=day,
-                topic=analysis.topic,
-                understanding_level="UNKNOWN",
-                confidence=None,
-                depth_confidence=None,
-                reasoning_confidence=None,
-                communication_confidence=None,
-                strengths=[],
-                gaps=[],
-                evidence_ids=[],
-                objectives={}
-            )
-        )
+        if day in knowledge.topics:
+            topic_k = knowledge.topics[day]
+            topic_k.understanding_level = analysis.understanding_assessment
+            topic_k.confidence = analysis.confidence
+            
+            for s in analysis.strengths:
+                if s not in topic_k.strengths:
+                    topic_k.strengths.append(s)
+            for g in analysis.gaps:
+                if g not in topic_k.gaps:
+                    topic_k.gaps.append(g)
 
-        topic_knowledge.understanding_level = analysis.understanding_assessment
-        topic_knowledge.confidence = analysis.confidence
-        topic_knowledge.strengths = list(set(topic_knowledge.strengths + analysis.strengths))
-        topic_knowledge.gaps = list(set(topic_knowledge.gaps + analysis.gaps))
-        if evidence_id not in topic_knowledge.evidence_ids:
-            topic_knowledge.evidence_ids.append(evidence_id)
+            if ev_id not in topic_k.evidence_ids:
+                topic_k.evidence_ids.append(ev_id)
 
-        # 3. Update specific ObjectiveKnowledge if objective_id is provided
-        if objective_id and objective_id in topic_knowledge.objectives:
-            obj_knowledge = topic_knowledge.objectives[objective_id]
-            obj_knowledge.understanding_level = analysis.understanding_assessment
-            obj_knowledge.confidence = analysis.confidence
-            if evidence_id not in obj_knowledge.evidence_ids:
-                obj_knowledge.evidence_ids.append(evidence_id)
+            if objective_id and objective_id in topic_k.objectives:
+                obj_k = topic_k.objectives[objective_id]
+                obj_k.understanding_level = analysis.understanding_assessment
+                obj_k.confidence = analysis.confidence
+                if ev_id not in obj_k.evidence_ids:
+                    obj_k.evidence_ids.append(ev_id)
 
-        knowledge_model.topics[day] = topic_knowledge
-        return item
-
-    def clear_all(self) -> None:
-        """Clear all stored sessions. Useful for testing or resetting state."""
-        self._sessions.clear()
+        return ev_item
 
 
-# Global singleton instance
 session_manager = SessionManager()

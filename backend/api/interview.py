@@ -72,7 +72,7 @@ def handle_interview(request: InterviewRequest) -> InterviewResponse:
             detail="An internal error occurred while processing the interview.",
         )
     except Exception:
-        # Catch internal unexpected exceptions and mask detailed tracebacks
+        # Catch unexpected exceptions and mask details
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal server error occurred while processing the interview request.",
